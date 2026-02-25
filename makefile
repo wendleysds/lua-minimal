@@ -1,219 +1,73 @@
-# Developer's makefile for building Lua
-# see luaconf.h for further customization
+CROSS_COMPILE ?=
+CC = $(CROSS_COMPILE)gcc
+AR = $(CROSS_COMPILE)ar
 
-# == CHANGE THE SETTINGS BELOW TO SUIT YOUR ENVIRONMENT =======================
+# Diretórios
+SRC_DIR = ./src
+BUILD_DIR = ./build
+OBJ_DIR = $(BUILD_DIR)/obj
+BIN_DIR = $(BUILD_DIR)/bin
 
-# Warnings valid for both C and C++
-CWARNSCPP= \
-	-Wfatal-errors \
-	-Wextra \
-	-Wshadow \
-	-Wundef \
-	-Wwrite-strings \
-	-Wredundant-decls \
-	-Wdisabled-optimization \
-	-Wdouble-promotion \
-	-Wmissing-declarations \
-	-Wconversion \
-        # the next warnings might be useful sometimes,
-	# but usually they generate too much noise
-	# -Wstrict-overflow=2 \
-	# -Werror \
-	# -pedantic   # warns if we use jump tables \
-	# -Wformat=2 \
-	# -Wcast-qual \
+# Flags base
+BASE_CFLAGS = -Wall -Werror -std=gnu11 -Isrc/include
+BASE_CFLAGS += -Wno-unused-function -Wno-unused-parameter
+BASE_CFLAGS += -Wno-int-to-pointer-cast -Wno-attribute-alias -Wno-cpp
+BASE_CFLAGS += -O2 -fno-stack-protector -fno-common
 
+ifdef DEBUG
+BASE_CFLAGS += -g
+endif
 
-# Warnings for gcc, not valid for clang
-CWARNGCC= \
-	-Wlogical-op \
-	-Wno-aggressive-loop-optimizations \
+ifdef BIT32
+BASE_CFLAGS += -m32
+endif
 
+FREESTANDING_FLAGS = -ffreestanding -nostdlib -nostartfiles
 
-# The next warnings are neither valid nor needed for C++
-CWARNSC= -Wdeclaration-after-statement \
-	-Wmissing-prototypes \
-	-Wnested-externs \
-	-Wstrict-prototypes \
-	-Wc++-compat \
-	-Wold-style-definition \
+LDFLAGS = 
 
+CORE_SRC = $(shell find $(SRC_DIR)/core -name "*.c")
+LIB_SRC  = $(shell find $(SRC_DIR)/lib -name "*.c")
 
-CWARNS= $(CWARNSCPP) $(CWARNSC) $(CWARNGCC)
+LUA_SRC  = $(SRC_DIR)/lua.c
+LUAC_SRC = $(SRC_DIR)/luac.c
 
-# Some useful compiler options for internal tests:
-# -DLUAI_ASSERT turns on all assertions inside Lua.
-# -DHARDSTACKTESTS forces a reallocation of the stack at every point where
-# the stack can be reallocated.
-# -DHARDMEMTESTS forces a full collection at all points where the collector
-# can run.
-# -DEMERGENCYGCTESTS forces an emergency collection at every single allocation.
-# -DEXTERNMEMCHECK removes internal consistency checking of blocks being
-# deallocated (useful when an external tool like valgrind does the check).
-# -DMAXINDEXRK=k limits range of constants in RK instruction operands.
-# -DLUA_COMPAT_5_3
+CORE_OBJS = $(patsubst $(SRC_DIR)/%.c, $(OBJ_DIR)/%.o, $(CORE_SRC))
+LIB_OBJS  = $(patsubst $(SRC_DIR)/%.c, $(OBJ_DIR)/%.o, $(LIB_SRC))
 
-# -pg -malign-double
-# -DLUA_USE_CTYPE -DLUA_USE_APICHECK
+LUA_O  = $(OBJ_DIR)/lua.o
+LUAC_O = $(OBJ_DIR)/luac.o
 
-# The following options help detect "undefined behavior"s that seldom
-# create problems; some are only available in newer gcc versions. To
-# use some of them, we also have to define an environment variable
-# ASAN_OPTIONS="detect_invalid_pointer_pairs=2".
-# -fsanitize=undefined
-# -fsanitize=pointer-subtract -fsanitize=address -fsanitize=pointer-compare
-# TESTS= -DLUA_USER_H='"ltests.h"' -Og -g
+LUA_BIN        = $(BIN_DIR)/lua
+LUAC_BIN       = $(BIN_DIR)/luac
+LUA_MINIMAL_BIN = $(BIN_DIR)/lua-minimal
 
+.PHONY: all clean lua-minimal
 
-LOCAL = $(TESTS) $(CWARNS)
+all: $(LUA_BIN) $(LUAC_BIN)
 
+$(LUA_BIN): $(CORE_OBJS) $(LIB_OBJS) $(LUA_O)
+	@echo "  LD     $@"
+	@mkdir -p $(dir $@)
+	$(CC) -o $@ $^ -lm
 
-# To enable Linux goodies, -DLUA_USE_LINUX
-# For C89, "-std=c89 -DLUA_USE_C89"
-# Note that Linux/Posix options are not compatible with C89
-MYCFLAGS= $(LOCAL) -std=c99 -DLUA_USE_LINUX
-MYLDFLAGS= -Wl,-E
-MYLIBS= -ldl
+$(LUAC_BIN): $(CORE_OBJS) $(LIB_OBJS) $(LUAC_O)
+	@echo "  LD     $@"
+	@mkdir -p $(dir $@)
+	$(CC) -o $@ $^ -lm
 
+lua-minimal: CFLAGS := $(BASE_CFLAGS) $(FREESTANDING_FLAGS)
+lua-minimal: $(LUA_MINIMAL_BIN)
 
-CC= gcc
-CFLAGS= -Wall -O2 $(MYCFLAGS) -fno-stack-protector -fno-common -march=native
-AR= ar rc
-RANLIB= ranlib
-RM= rm -f
+$(LUA_MINIMAL_BIN): $(CORE_OBJS)
+	@echo "  LD     $@ (freestanding)"
+	@mkdir -p $(dir $@)
+	$(CC) $(FREESTANDING_FLAGS) -o $@ $^
 
-
-
-# == END OF USER SETTINGS. NO NEED TO CHANGE ANYTHING BELOW THIS LINE =========
-
-
-LIBS = -lm
-
-CORE_T=	liblua.a
-CORE_O=	lapi.o lcode.o lctype.o ldebug.o ldo.o ldump.o lfunc.o lgc.o llex.o \
-	lmem.o lobject.o lopcodes.o lparser.o lstate.o lstring.o ltable.o \
-	ltm.o lundump.o lvm.o lzio.o ltests.o
-AUX_O=	lauxlib.o
-LIB_O=	lbaselib.o ldblib.o liolib.o lmathlib.o loslib.o ltablib.o lstrlib.o \
-	lutf8lib.o loadlib.o lcorolib.o linit.o
-
-LUA_T=	lua
-LUA_O=	lua.o
-
-
-ALL_T= $(CORE_T) $(LUA_T)
-ALL_O= $(CORE_O) $(LUA_O) $(AUX_O) $(LIB_O)
-ALL_A= $(CORE_T)
-
-all:	$(ALL_T)
-	touch all
-
-o:	$(ALL_O)
-
-a:	$(ALL_A)
-
-$(CORE_T): $(CORE_O) $(AUX_O) $(LIB_O)
-	$(AR) $@ $?
-	$(RANLIB) $@
-
-$(LUA_T): $(LUA_O) $(CORE_T)
-	$(CC) -o $@ $(MYLDFLAGS) $(LUA_O) $(CORE_T) $(LIBS) $(MYLIBS) $(DL)
-
+$(OBJ_DIR)/%.o: $(SRC_DIR)/%.c
+	@echo "  CC     $<"
+	@mkdir -p $(dir $@)
+	$(CC) $(BASE_CFLAGS) -c $< -o $@
 
 clean:
-	$(RM) $(ALL_T) $(ALL_O)
-
-depend:
-	@$(CC) $(CFLAGS) -MM *.c
-
-echo:
-	@echo "CC = $(CC)"
-	@echo "CFLAGS = $(CFLAGS)"
-	@echo "AR = $(AR)"
-	@echo "RANLIB = $(RANLIB)"
-	@echo "RM = $(RM)"
-	@echo "MYCFLAGS = $(MYCFLAGS)"
-	@echo "MYLDFLAGS = $(MYLDFLAGS)"
-	@echo "MYLIBS = $(MYLIBS)"
-	@echo "DL = $(DL)"
-
-$(ALL_O): makefile ltests.h
-
-# DO NOT EDIT
-# automatically made with 'gcc -MM l*.c'
-
-lapi.o: lapi.c lprefix.h lua.h luaconf.h lapi.h llimits.h lstate.h \
- lobject.h ltm.h lzio.h lmem.h ldebug.h ldo.h lfunc.h lgc.h lstring.h \
- ltable.h lundump.h lvm.h
-lauxlib.o: lauxlib.c lprefix.h lua.h luaconf.h lauxlib.h llimits.h
-lbaselib.o: lbaselib.c lprefix.h lua.h luaconf.h lauxlib.h lualib.h \
- llimits.h
-lcode.o: lcode.c lprefix.h lua.h luaconf.h lcode.h llex.h lobject.h \
- llimits.h lzio.h lmem.h lopcodes.h lparser.h ldebug.h lstate.h ltm.h \
- ldo.h lgc.h lstring.h ltable.h lvm.h lopnames.h
-lcorolib.o: lcorolib.c lprefix.h lua.h luaconf.h lauxlib.h lualib.h \
- llimits.h
-lctype.o: lctype.c lprefix.h lctype.h lua.h luaconf.h llimits.h
-ldblib.o: ldblib.c lprefix.h lua.h luaconf.h lauxlib.h lualib.h llimits.h
-ldebug.o: ldebug.c lprefix.h lua.h luaconf.h lapi.h llimits.h lstate.h \
- lobject.h ltm.h lzio.h lmem.h lcode.h llex.h lopcodes.h lparser.h \
- ldebug.h ldo.h lfunc.h lstring.h lgc.h ltable.h lvm.h
-ldo.o: ldo.c lprefix.h lua.h luaconf.h lapi.h llimits.h lstate.h \
- lobject.h ltm.h lzio.h lmem.h ldebug.h ldo.h lfunc.h lgc.h lopcodes.h \
- lparser.h lstring.h ltable.h lundump.h lvm.h
-ldump.o: ldump.c lprefix.h lua.h luaconf.h lapi.h llimits.h lstate.h \
- lobject.h ltm.h lzio.h lmem.h lgc.h ltable.h lundump.h
-lfunc.o: lfunc.c lprefix.h lua.h luaconf.h ldebug.h lstate.h lobject.h \
- llimits.h ltm.h lzio.h lmem.h ldo.h lfunc.h lgc.h
-lgc.o: lgc.c lprefix.h lua.h luaconf.h ldebug.h lstate.h lobject.h \
- llimits.h ltm.h lzio.h lmem.h ldo.h lfunc.h lgc.h lstring.h ltable.h
-linit.o: linit.c lprefix.h lua.h luaconf.h lualib.h lauxlib.h llimits.h
-liolib.o: liolib.c lprefix.h lua.h luaconf.h lauxlib.h lualib.h llimits.h
-llex.o: llex.c lprefix.h lua.h luaconf.h lctype.h llimits.h ldebug.h \
- lstate.h lobject.h ltm.h lzio.h lmem.h ldo.h lgc.h llex.h lparser.h \
- lstring.h ltable.h
-lmathlib.o: lmathlib.c lprefix.h lua.h luaconf.h lauxlib.h lualib.h \
- llimits.h
-lmem.o: lmem.c lprefix.h lua.h luaconf.h ldebug.h lstate.h lobject.h \
- llimits.h ltm.h lzio.h lmem.h ldo.h lgc.h
-loadlib.o: loadlib.c lprefix.h lua.h luaconf.h lauxlib.h lualib.h \
- llimits.h
-lobject.o: lobject.c lprefix.h lua.h luaconf.h lctype.h llimits.h \
- ldebug.h lstate.h lobject.h ltm.h lzio.h lmem.h ldo.h lstring.h lgc.h \
- lvm.h
-lopcodes.o: lopcodes.c lprefix.h lopcodes.h llimits.h lua.h luaconf.h \
- lobject.h
-loslib.o: loslib.c lprefix.h lua.h luaconf.h lauxlib.h lualib.h llimits.h
-lparser.o: lparser.c lprefix.h lua.h luaconf.h lcode.h llex.h lobject.h \
- llimits.h lzio.h lmem.h lopcodes.h lparser.h ldebug.h lstate.h ltm.h \
- ldo.h lfunc.h lstring.h lgc.h ltable.h
-lstate.o: lstate.c lprefix.h lua.h luaconf.h lapi.h llimits.h lstate.h \
- lobject.h ltm.h lzio.h lmem.h ldebug.h ldo.h lfunc.h lgc.h llex.h \
- lstring.h ltable.h
-lstring.o: lstring.c lprefix.h lua.h luaconf.h ldebug.h lstate.h \
- lobject.h llimits.h ltm.h lzio.h lmem.h ldo.h lstring.h lgc.h
-lstrlib.o: lstrlib.c lprefix.h lua.h luaconf.h lauxlib.h lualib.h \
- llimits.h
-ltable.o: ltable.c lprefix.h lua.h luaconf.h ldebug.h lstate.h lobject.h \
- llimits.h ltm.h lzio.h lmem.h ldo.h lgc.h lstring.h ltable.h lvm.h
-ltablib.o: ltablib.c lprefix.h lua.h luaconf.h lauxlib.h lualib.h \
- llimits.h
-ltests.o: ltests.c lprefix.h lua.h luaconf.h lapi.h llimits.h lstate.h \
- lobject.h ltm.h lzio.h lmem.h lauxlib.h lcode.h llex.h lopcodes.h \
- lparser.h lctype.h ldebug.h ldo.h lfunc.h lopnames.h lstring.h lgc.h \
- ltable.h lualib.h
-ltm.o: ltm.c lprefix.h lua.h luaconf.h ldebug.h lstate.h lobject.h \
- llimits.h ltm.h lzio.h lmem.h ldo.h lgc.h lstring.h ltable.h lvm.h
-lua.o: lua.c lprefix.h lua.h luaconf.h lauxlib.h lualib.h llimits.h
-lundump.o: lundump.c lprefix.h lua.h luaconf.h ldebug.h lstate.h \
- lobject.h llimits.h ltm.h lzio.h lmem.h ldo.h lfunc.h lstring.h lgc.h \
- ltable.h lundump.h
-lutf8lib.o: lutf8lib.c lprefix.h lua.h luaconf.h lauxlib.h lualib.h \
- llimits.h
-lvm.o: lvm.c lprefix.h lua.h luaconf.h lapi.h llimits.h lstate.h \
- lobject.h ltm.h lzio.h lmem.h ldebug.h ldo.h lfunc.h lgc.h lopcodes.h \
- lstring.h ltable.h lvm.h ljumptab.h
-lzio.o: lzio.c lprefix.h lua.h luaconf.h lapi.h llimits.h lstate.h \
- lobject.h ltm.h lzio.h lmem.h
-
-# (end of Makefile)
+	rm -rf $(BUILD_DIR)
