@@ -12,7 +12,7 @@ BIN_DIR = $(BUILD_DIR)/bin
 BASE_CFLAGS = -Wall -Werror -std=gnu11 -Isrc/include
 BASE_CFLAGS += -Wno-unused-function -Wno-unused-parameter
 BASE_CFLAGS += -Wno-int-to-pointer-cast -Wno-attribute-alias -Wno-cpp
-BASE_CFLAGS += -O2 -fno-stack-protector -fno-common
+BASE_CFLAGS += -O2 -fno-stack-protector -fno-common -fno-builtin
 
 ifdef DEBUG
 BASE_CFLAGS += -g
@@ -22,18 +22,20 @@ ifdef BIT32
 BASE_CFLAGS += -m32
 endif
 
-FREESTANDING_FLAGS = -ffreestanding -nostdlib -nostartfiles
+FREESTANDING_FLAGS = -ffreestanding -nostdlib -nostartfiles -fno-builtin
 
 LDFLAGS = 
 
 CORE_SRC = $(shell find $(SRC_DIR)/core -name "*.c")
 LIB_SRC  = $(shell find $(SRC_DIR)/lib -name "*.c")
+LIBC_SRC = $(shell find $(SRC_DIR)/lua-libc -name "*.c")
 
 LUA_SRC  = $(SRC_DIR)/lua.c
 LUAC_SRC = $(SRC_DIR)/luac.c
 
 CORE_OBJS = $(patsubst $(SRC_DIR)/%.c, $(OBJ_DIR)/%.o, $(CORE_SRC))
 LIB_OBJS  = $(patsubst $(SRC_DIR)/%.c, $(OBJ_DIR)/%.o, $(LIB_SRC))
+LIBC_OBJS = $(patsubst $(SRC_DIR)/%.c, $(OBJ_DIR)/%.o, $(LIBC_SRC))
 
 LUA_O  = $(OBJ_DIR)/lua.o
 LUAC_O = $(OBJ_DIR)/luac.o
@@ -59,7 +61,7 @@ $(LUAC_BIN): $(CORE_OBJS) $(LIB_OBJS) $(LUAC_O)
 lua-minimal: CFLAGS := $(BASE_CFLAGS) $(FREESTANDING_FLAGS)
 lua-minimal: $(LUA_MINIMAL_BIN)
 
-$(LUA_MINIMAL_BIN): $(CORE_OBJS)
+$(LUA_MINIMAL_BIN): $(CORE_OBJS) $(LIBC_OBJS)
 	@echo "  LD     $@ (freestanding)"
 	@mkdir -p $(dir $@)
 	$(CC) $(FREESTANDING_FLAGS) -o $@ $^
