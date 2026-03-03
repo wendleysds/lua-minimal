@@ -1,5 +1,4 @@
 #include <string.h>
-#include <errno.h>
 #include <float.h>
 
 #define NAN (__builtin_nanf(""))
